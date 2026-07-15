@@ -15,7 +15,7 @@ const RATE_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT = 30;
 const MAX_BODY_BYTES = 512_000;
 const MAX_README_CHARS = 60_000;
-export const INSIGHT_SCHEMA_VERSION = 3;
+export const INSIGHT_SCHEMA_VERSION = 4;
 
 function json(response, status, payload) {
   response.writeHead(status, {
@@ -103,8 +103,8 @@ export function normalizeInsight(value, modelName = model) {
     limitations: normalizedText(source.limitations, "README 未覆盖的能力、兼容性和部署条件需要进一步确认。"),
     score: Number.isFinite(score) ? Math.max(1, Math.min(10, Math.round(score))) : 5,
     evidence: normalizedText(source.evidence, "解读仅依据本次提交的 README 与仓库公开元数据生成。", 800),
-    readmeHighlights: normalizedList(source.readmeHighlights),
-    modelVersion: `${modelName}-zh-insight-v3`,
+    readmeHighlights: normalizedList(source.readmeHighlights, 8, 800),
+    modelVersion: `${modelName}-zh-insight-v4`,
   };
 }
 
@@ -154,8 +154,20 @@ JSON 格式：
   "limitations": "限制、前提、风险或证据缺口",
   "score": 1,
   "evidence": "结论对应的 README 章节或公开元数据",
-  "readmeHighlights": ["README 中可核验的安装、用法或架构线索"]
+  "readmeHighlights": [
+    "【核心定位】用 2-4 句说明项目解决的问题、关键概念与工作方式",
+    "【主要能力】列出 README 明确说明的核心能力及其作用",
+    "【快速开始】保留必要的安装命令、初始化步骤和最小可运行示例",
+    "【关键配置】说明环境变量、配置文件、运行参数及默认行为",
+    "【使用方式】概括核心 API、CLI、SDK 或典型调用流程，保留短代码片段",
+    "【架构与依赖】说明组件关系、运行时、外部服务、数据库或模型依赖",
+    "【部署与集成】整理部署方式、平台要求以及可接入的生态系统",
+    "【注意事项】说明 README 明示的兼容性、限制、前置条件和风险"
+  ]
 }
+
+readmeHighlights 要优先覆盖上述 8 个章节；README 确无证据的章节可以省略，但至少输出 5 条。
+每条应包含具体事实，通常 80-250 个中文字符；命令或短代码可用行内文本保留。不要重复顶部概述中的空泛结论。
 
 仓库：${input.repository}
 仓库链接：${input.repositoryUrl}
@@ -227,6 +239,10 @@ export async function handleGatewayRequest(request, response, pathOverride) {
 export function createGatewayServer() {
   return http.createServer(handleGatewayRequest);
 }
+
+// Vercel's generic Node runtime loads the root server module as a function.
+// Keeping this default export also preserves the standalone Node entrypoint below.
+export default handleGatewayRequest;
 
 export function startGateway() {
   return createGatewayServer().listen(port, () => {
